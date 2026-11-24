@@ -1,0 +1,1201 @@
+---
+title: "STA130 Final Project"
+author: "Michelle Bakman, Elise Corbin, Leo Lei, Lidya Yared, Mengzhen Zhou"
+date: "2024-04-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rpart)
+library(partykit)
+library(dplyr)
+```
+
+
+```{r}
+# load in country indicators
+country_indicators <- 
+  read_csv("country_indicators.csv") %>%
+  select(-...1) %>%  # remove first column
+  select(iso3, everything()) %>%  # reorder the columns to put iso3 as column 1
+  rename(country_code_iso3 = iso3)  # rename first column to country_code_iso3
+
+# SDG data wrangling
+
+# load SDG data
+sdg <- 
+  read_csv("sdr_fd5e4b5a.csv") %>%
+  select(-...1) # remove first column
+
+# rename columns
+names(sdg)[1:(2*17)] <- 
+  paste(c(rep(paste("goal_", 1:17, sep=""), each=2)), 
+        rep(c("_status", "_trend"), times=17), sep="")
+names(sdg)[(2*17 + 1):(3*17)] <- 
+  paste("goal_", 1:17, "_score", sep="")
+names(sdg)[names(sdg)=="2023 SDG Index Score"] <- 
+  "SDG_index_score_2023"
+names(sdg)[names(sdg)=="2023 SDG Index Rank"] <- 
+  "SDG_index_rank_2023"
+names(sdg)[names(sdg)=="Percentage missing values"] <- 
+  "percentage_missing_values"
+names(sdg)[names(sdg)=="International Spillovers Score (0-100)"] <- 
+  "international_spillover_score"
+names(sdg)[names(sdg)=="International Spillovers Rank"] <- 
+  "international_spillover_rank"
+names(sdg)[names(sdg)=="Country Code ISO3"] <- 
+  "country_code_iso3"
+
+sdg
+```
+# Question1
+
+## hypothesis testing
+
+### Null hypothesis and alternative hypothesis:
+
+For each test, we set the following assumptions:
+Null hypothesis $H_0$ : There is no difference in the progress towards goal 1 and goal 8 depnding on if the country has an achieved goal 4 status or an unachieved goal 4 status.
+Alternative hypothesis $H_1$ : The two groups of countries differ in their progress.
+
+### Hypothesis test results (Goal 1):
+
+
+```{r}
+#Data wrangle
+
+#Filtered countries
+east_asian_countries <- c("CHN", "JPN", "KOR", "TWN", "HKG", "MNG", "VNM", "LAO", "THA", "MMR", "PHL", "IDN", "MYS", "MAC")
+
+# Filter data to include only the relevant columns and East Asian countries
+filtered_country_data <- country_indicators %>%
+  filter(country_code_iso3 %in% east_asian_countries) %>% select(country_code_iso3)
+
+
+#filter relevant columns
+relevant_sdg_columns <- c("country_code_iso3", "goal_4_status", "goal_1_score", "goal_8_score")
+
+#filter data set
+sdg_filter <- sdg %>% select(relevant_sdg_columns) %>% filter(country_code_iso3 %in% east_asian_countries)
+
+# join tables
+data <- inner_join(x=filtered_country_data, y=sdg_filter, by="country_code_iso3")
+
+
+# Divide the dataset into two groups: group 1 (those who have achieved Goal 4) and group 2 (those who have not)
+
+status<- data %>% 
+  mutate(goalstatus = case_when(goal_4_status == "SDG achieved" ~ "achieved", 
+                                goal_4_status != "SDG achieved" ~ "unachieved")) 
+
+# Set seed for reproducibility
+set.seed(123)
+
+#calculate test statistic
+goal1_mean_obs <- status %>% 
+group_by(goalstatus) %>% 
+summarise(means = mean(goal_1_score)) %>% 
+summarise(value = diff(means)) %>% 
+as.numeric()
+
+
+# Number of permutations
+num_trials <- 1000 
+goal_1_simulations <- rep(NA, num_trials)
+for(i in 1:num_trials){ 
+# perform a random permutation 
+goal_1_data <- 
+status %>% 
+mutate(group = sample(goalstatus, replace=FALSE)) 
+ # compute the simulated test statistic 
+ goal_1_sim <- 
+ goal_1_data %>% 
+ group_by(group) %>% 
+ summarise(means = mean(goal_1_score), .groups="drop") %>% 
+ summarise(value = diff(means)) %>% 
+ as.numeric() 
+ # store the simulated value 
+goal_1_simulations[i] <- goal_1_sim
+}
+
+# calculate 2-sided p-value
+delta_mean_null <- 0 
+pvalue_2side <-
+sum(abs(goal_1_simulations - delta_mean_null) >=
+abs(goal1_mean_obs - delta_mean_null)) / num_trials
+print(pvalue_2side)
+ 
+```
+
+
+#Hypothesis test results (goal 8)
+```{r}
+
+# Set seed for reproducibility
+set.seed(123)
+
+#calculate test statistic
+goal8_mean_obs <- status %>% 
+group_by(goalstatus) %>% 
+summarise(means = mean(goal_8_score)) %>% 
+summarise(value = diff(means)) %>% 
+as.numeric()
+
+
+# Number of permutations
+num_trials <- 1000 
+goal_8_simulations <- rep(NA, num_trials)
+for(i in 1:num_trials){ 
+# perform a random permutation 
+goal_8_data <- 
+status %>% 
+mutate(group = sample(goalstatus, replace=FALSE)) 
+ # compute the simulated test statistic 
+ goal_8_sim <- 
+ goal_8_data %>% 
+ group_by(group) %>% 
+ summarise(means = mean(goal_8_score), .groups="drop") %>% 
+ summarise(value = diff(means)) %>% 
+ as.numeric() 
+ # store the simulated value 
+ goal_8_simulations[i] <- goal_8_sim
+}
+ 
+# calculate 2-sided p-value
+pvalue_2side <-
+sum(abs(goal_8_simulations - delta_mean_null) >=
+abs(goal8_mean_obs - delta_mean_null)) / num_trials
+print(pvalue_2side)
+
+```
+#Observations
+
+
+For both of the goals the p-values are bigger than the chosen alpha level of 0.05, so we have no reason to reject the null hypotheses. This means that there aren't statistically significant differences between countries with achieved education status and countries without achieved education status when it comes to their goal_1_score and goal_8_score.
+
+
+## bootstrap
+
+```{r}
+status<- data %>% 
+  mutate(goalstatus = case_when(goal_4_status == "SDG achieved" ~ "SDG achieved", 
+                                goal_4_status != "SDG achieved" ~ "SDG unachieved")) 
+# Define a bootstrapping function
+achieved_education_status <- as.data.frame(status[status$goalstatus == "SDG achieved", ])
+unachieved_education_status <- as.data.frame(status[status$goalstatus == "SDG unachieved", ])
+
+set.seed(123)
+boot_CI<-function(data_column,n_bootstrap=1000){
+  
+  bootstrap_means <- function(data_column, n_bootstrap) {
+    bootstrap_samples <- replicate(n_bootstrap, sample(data_column, replace = TRUE))
+    mean_values <- apply(bootstrap_samples, 2, mean)
+    return(mean_values)
+  }
+  
+  achieved_gdp_growth_means <- bootstrap_means(na.omit(achieved_education_status[,data_column]), n_bootstrap)
+  
+  unachieved_gdp_growth_means <- bootstrap_means(na.omit(unachieved_education_status[,data_column]), n_bootstrap)
+  
+  # Calculate the confidence intervals for the bootstrapped means
+  achieved_ci <- quantile(achieved_gdp_growth_means, probs = c(0.025, 0.975))
+  unachieved_ci <- quantile(unachieved_gdp_growth_means, probs = c(0.025, 0.975))
+  
+  # Compare the confidence intervals
+  return(list(achieved_ci=achieved_ci,unachieved_ci=unachieved_ci))
+}
+
+print("*********goal_1_score**************")
+boot_CI("goal_1_score")
+print("*********goal_8_score**************")
+boot_CI("goal_8_score")
+```
+#Observations
+I used a bootstrap sampling method to calculate 95% confidence intervals for the mean of each indicator. The confidence intervals of the goal 1 score for countries that have achieved the level of education do not overlap with the confidence intervals for countries that have not achieved the level of education, rejecting the results of the random sampling test. This suggests substantial differences in the progress of the two groups of countries on the goal 1 indicators in terms of educational attainment. The confidence intervals for the goal 8 score for countries that have achieved the education level overlap with those for countries that have not, further validating the results of the t-test. This suggests that there is no substantial difference in the progress of the two groups of countries on the goal 8 indicators in terms of educational attainment.
+
+
+## Visualizations
+```{r message=FALSE, warning=FALSE,fig.width=7,fig.height=5}
+
+# Histogram for goal 1
+ggplot(status, aes(x=goal_1_score)) + 
+  geom_histogram(aes(fill=goalstatus), bins = 3, alpha=0.6, position="dodge") + 
+  labs(x="goal 1 score", y="Count") + 
+  theme_classic()
+# Histogram for goal 8
+ggplot(status, aes(x=goal_8_score)) + 
+  geom_histogram(aes(fill=goalstatus), bins = 3,  alpha=0.6, position="dodge")  + 
+  labs(x="goal 8 score", y="Count") + 
+  theme_classic()
+
+
+#box plot (goal 1)
+ggplot(data = status, aes(x = goalstatus, y = goal_1_score, fill = goalstatus)) +
+  geom_boxplot() +
+  labs(x = "Goal 4 Status", y = "Goal 1 Score (No Poverty)", fill = "Goal 4 Status") +
+  ggtitle("Box Plot of Goal 1 Scores by Achievement Status in Goal 4")
+
+
+#box plot (goal 8)
+ggplot(data = status, aes(x = goalstatus, y = goal_8_score, fill = goalstatus)) +
+  geom_boxplot() +
+  labs(x = "Goal 4 Status", y = "Goal 8 Score (Economic Growth)", fill = "Goal 4 Status") +
+  ggtitle("Box Plot of Goal 8 Scores by Achievement Status in Goal 4")
+
+```
+#Conclusions
+1. When the state of Goal 4 is "SDG achieved", the frequency of Goal 1 score mainly focuses on the highest value over 100.
+This means that when the attainment status of the education Goal (Goal 4) is defined as achieved (SDG achieved), the score of the related Goal 1 (referring to the indicator on poverty) tends to have a higher frequency around the high score of more than 100. This may indicate that when education goals are achieved, related indicators such as poverty and hunger are also likely to benefit and show higher scores.
+
+2.  = = 
+This description shows that when the status of the education Goal is considered to have been achieved, the score of Goal 8 (an indicator of economic growth, etc.) associated with it tends to have a high frequency around the high value of more than 70. This may imply that the associated employment and economic growth may also benefit and exhibit higher scores when education goals are achieved.
+
+It shows that when the education goal is achieved, other related goals (such as poverty reduction and economic growth) tend to be positively affected, which is reflected in the corresponding score distribution.
+
+```{r}
+# q2 (Elise)
+# assign country codes to row names (so it doesn't screw up k means)
+sdg2 <- as.data.frame(sdg)
+row.names(sdg2) <- sdg2$country_code_iso3
+
+# select the columns we need
+sdg2 <- sdg2 %>%
+  select(paste(c(rep(paste("goal_", 1:17, sep=""), each=1)), 
+        rep(c("_score"), times=17), sep=""))
+
+head(sdg2)
+
+```
+
+```{r}
+# k means for goal 3 vs. goal 1
+
+# select data for goal 1 only
+goal_1 <- sdg2 %>%
+  select('goal_3_score', 'goal_1_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(1)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_1, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 1") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(1)
+clustering <- kmeans(goal_1, 3)
+
+# add cluster labels to our original data
+goal_1 <- goal_1 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_1 %>% ggplot(aes(x=goal_3_score, y=goal_1_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 1 score', title='Goal 3 vs. Goal 1')
+
+goal_1_ea <- goal_1[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_1_ea
+```
+```{r}
+# k means for goal 3 vs. goal 2
+
+# select data for goal 2 only
+goal_2 <- sdg2 %>%
+  select('goal_3_score', 'goal_2_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(2)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_2, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 2") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(2)
+clustering <- kmeans(goal_2, 3)
+
+# add cluster labels to our original data
+goal_2 <- goal_2 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_2 %>% ggplot(aes(x=goal_3_score, y=goal_2_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 2 score', title='Goal 3 vs. Goal 2')
+
+goal_2_ea <- goal_2[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_2_ea
+```
+```{r}
+# k means for goal 3 vs. goal 4
+
+# select data for goal 4 only
+goal_4 <- sdg2 %>%
+  select('goal_3_score', 'goal_4_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(4)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_4, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 4") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(4)
+clustering <- kmeans(goal_4, 3)
+
+# add cluster labels to our original data
+goal_4 <- goal_4 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_4 %>% ggplot(aes(x=goal_3_score, y=goal_4_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 4 score', title='Goal 3 vs. Goal 4')
+
+goal_4_ea <- goal_4[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_4_ea
+```
+```{r}
+# k means for goal 3 vs. goal 5
+
+# select data for goal 5 only
+goal_5 <- sdg2 %>%
+  select('goal_3_score', 'goal_5_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(5)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_5, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 5") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(5)
+clustering <- kmeans(goal_5, 3)
+
+# add cluster labels to our original data
+goal_5 <- goal_5 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_5 %>% ggplot(aes(x=goal_3_score, y=goal_5_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 5 score', title='Goal 3 vs. Goal 5')
+
+goal_5_ea <- goal_5[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_5_ea
+```
+```{r}
+# k means for goal 3 vs. goal 6
+
+# select data for goal 6 only
+goal_6 <- sdg2 %>%
+  select('goal_3_score', 'goal_6_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(6)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_6, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 6") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(6)
+clustering <- kmeans(goal_6, 3)
+
+# add cluster labels to our original data
+goal_6 <- goal_6 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_6 %>% ggplot(aes(x=goal_3_score, y=goal_6_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 6 score', title='Goal 3 vs. Goal 6')
+
+goal_6_ea <- goal_6[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_6_ea
+```
+```{r}
+# k means for goal 3 vs. goal 7
+
+# select data for goal 7 only
+goal_7 <- sdg2 %>%
+  select('goal_3_score', 'goal_7_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(7)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_7, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 7") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(7)
+clustering <- kmeans(goal_7, 4)
+
+# add cluster labels to our original data
+goal_7 <- goal_7 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_7 %>% ggplot(aes(x=goal_3_score, y=goal_7_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 7 score', title='Goal 3 vs. Goal 7')
+
+goal_7_ea <- goal_7[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_7_ea
+```
+```{r}
+# k means for goal 3 vs. goal 8
+
+# select data for goal 8 only
+goal_8 <- sdg2 %>%
+  select('goal_3_score', 'goal_8_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(8)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_8, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 8") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(8)
+clustering <- kmeans(goal_8, 4)
+
+# add cluster labels to our original data
+goal_8 <- goal_8 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_8 %>% ggplot(aes(x=goal_3_score, y=goal_8_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 8 score', title='Goal 3 vs. Goal 8')
+
+goal_8_ea <- goal_8[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_8_ea
+```
+```{r}
+# k means for goal 3 vs. goal 9
+
+# select data for goal 9 only
+goal_9 <- sdg2 %>%
+  select('goal_3_score', 'goal_9_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(9)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_9, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 9") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(9)
+clustering <- kmeans(goal_9, 3)
+
+# add cluster labels to our original data
+goal_9 <- goal_9 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_9 %>% ggplot(aes(x=goal_3_score, y=goal_9_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 9 score', title='Goal 3 vs. Goal 9')
+
+goal_9_ea <- goal_9[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_9_ea
+```
+```{r}
+# k means for goal 3 vs. goal 10
+
+# select data for goal 10 only
+goal_10 <- sdg2 %>%
+  select('goal_3_score', 'goal_10_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(10)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_10, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 10") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(10)
+clustering <- kmeans(goal_10, 4)
+
+# add cluster labels to our original data
+goal_10 <- goal_10 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_10 %>% ggplot(aes(x=goal_3_score, y=goal_10_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 10 score', title='Goal 3 vs. Goal 10')
+
+goal_10_ea <- goal_10[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_10_ea
+```
+```{r}
+# k means for goal 3 vs. goal 11
+
+# select data for goal 11 only
+goal_11 <- sdg2 %>%
+  select('goal_3_score', 'goal_11_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(11)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_11, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 11") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(11)
+clustering <- kmeans(goal_11, 3)
+
+# add cluster labels to our original data
+goal_11 <- goal_11 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_11 %>% ggplot(aes(x=goal_3_score, y=goal_11_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 11 score', title='Goal 3 vs. Goal 11')
+
+goal_11_ea <- goal_11[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_11_ea
+```
+```{r}
+# k means for goal 3 vs. goal 12
+
+# select data for goal 12 only
+goal_12 <- sdg2 %>%
+  select('goal_3_score', 'goal_12_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(1)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_12, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 12") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(12)
+clustering <- kmeans(goal_12, 3)
+
+# add cluster labels to our original data
+goal_12 <- goal_12 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_12 %>% ggplot(aes(x=goal_3_score, y=goal_12_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 12 score', title='Goal 3 vs. Goal 12')
+
+goal_12_ea <- goal_12[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_12_ea
+```
+```{r}
+# k means for goal 3 vs. goal 13
+
+# select data for goal 13 only
+goal_13 <- sdg2 %>%
+  select('goal_3_score', 'goal_13_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(13)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_13, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 13") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(13)
+clustering <- kmeans(goal_13, 4)
+
+# add cluster labels to our original data
+goal_13 <- goal_13 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_13 %>% ggplot(aes(x=goal_3_score, y=goal_13_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 13 score', title='Goal 3 vs. Goal 13')
+
+goal_13_ea <- goal_13[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_13_ea
+```
+```{r}
+# k means for goal 3 vs. goal 14
+
+# select data for goal 14 only
+goal_14 <- sdg2 %>%
+  select('goal_3_score', 'goal_14_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(14)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_14, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 14") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(14)
+clustering <- kmeans(goal_14, 4)
+
+# add cluster labels to our original data
+goal_14 <- goal_14 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_14 %>% ggplot(aes(x=goal_3_score, y=goal_14_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 14 score', title='Goal 3 vs. Goal 14')
+
+goal_14_ea <- goal_14[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_14_ea
+```
+```{r}
+# k means for goal 3 vs. goal 15
+
+# select data for goal 15 only
+goal_15 <- sdg2 %>%
+  select('goal_3_score', 'goal_15_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(15)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_15, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 15") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 4 clusters
+set.seed(15)
+clustering <- kmeans(goal_15, 4)
+
+# add cluster labels to our original data
+goal_15 <- goal_15 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_15 %>% ggplot(aes(x=goal_3_score, y=goal_15_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 15 score', title='Goal 3 vs. Goal 15')
+
+goal_15_ea <- goal_15[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_15_ea
+```
+```{r}
+# k means for goal 3 vs. goal 16
+
+# select data for goal 16 only
+goal_16 <- sdg2 %>%
+  select('goal_3_score', 'goal_16_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(16)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_16, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 1") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(16)
+clustering <- kmeans(goal_16, 3)
+
+# add cluster labels to our original data
+goal_16 <- goal_16 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_16 %>% ggplot(aes(x=goal_3_score, y=goal_16_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 16 score', title='Goal 3 vs. Goal 16')
+
+goal_16_ea <- goal_16[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_16_ea
+```
+```{r}
+# k means for goal 3 vs. goal 17
+
+# select data for goal 17 only
+goal_17 <- sdg2 %>%
+  select('goal_3_score', 'goal_17_score') %>%
+  drop_na()
+
+# determine the optimal number of clusters
+set.seed(17)
+explained_ss <- rep(NA, 10)
+for(k in 1:10){
+  # run k-means on the data
+  clustering <- kmeans(goal_17, k)
+  explained_ss[k] <- clustering$betweenss / clustering$totss
+}
+
+# plot a graphic of the optimal number of clusters
+ggplot() + 
+  aes(x=1:10, y=1-explained_ss) +
+  geom_line() + 
+  geom_point() +
+  labs(x="Number of Clusters", 
+       y="Remaining Variation",
+       title="K-Means Performance for Goal 17") +
+  theme(text=element_text(size=18)) +
+  scale_x_continuous(breaks=1:10) +
+  scale_x_continuous(breaks=1:10)
+
+# perform k-means clustering with 3 clusters
+set.seed(17)
+clustering <- kmeans(goal_17, 3)
+
+# add cluster labels to our original data
+goal_17 <- goal_17 %>%
+  mutate(cluster = clustering$cluster)
+
+# plot a scatterplot with the clusters
+goal_17 %>% ggplot(aes(x=goal_3_score, y=goal_17_score, group=cluster, color=cluster)) +
+  geom_point() +
+  labs(x='Goal 3 score', y='Goal 17 score', title='Goal 3 vs. Goal 17')
+
+goal_17_ea <- goal_17[c('MNG', 'JPN', 'KOR', 'CHN'), ] %>%
+  drop_na()
+goal_17_ea
+```
+
+```{r}
+# q3 (Michelle)
+# initialize data variables with selection and progress variable(binary version of trend variable) mutated
+
+q3_sdg <- sdg %>% select(c(country_label, goal_9_score, goal_9_status, goal_9_trend, goal_3_score, goal_3_status, goal_3_trend, goal_14_score, goal_14_status, goal_14_trend, goal_15_score, goal_15_status, goal_15_trend)) %>% mutate(goal_9_progress = case_when(goal_9_trend == "On track or maintaining SDG achievement" | goal_9_trend == "Score moderately improving, insufficient to attain goal" ~ "Progressing Well", goal_9_trend == "Score stagnating or increasing at less than 50% of required rate" | goal_9_trend == "Decreasing" ~ "Progressing Poorly"), goal_3_progress = case_when(goal_3_trend == "On track or maintaining SDG achievement" | goal_3_trend == "Score moderately improving, insufficient to attain goal" ~ "Progressing Well", goal_3_trend == "Score stagnating or increasing at less than 50% of required rate" | goal_3_trend == "Decreasing" ~ "Progressing Poorly"), goal_14_progress = case_when(goal_14_trend == "On track or maintaining SDG achievement" | goal_14_trend == "Score moderately improving, insufficient to attain goal" ~ "Progressing Well", goal_14_trend == "Score stagnating or increasing at less than 50% of required rate" | goal_14_trend == "Decreasing" ~ "Progressing Poorly"), goal_15_progress = case_when(goal_15_trend == "On track or maintaining SDG achievement" | goal_15_trend == "Score moderately improving, insufficient to attain goal" ~ "Progressing Well", goal_15_trend == "Score stagnating or increasing at less than 50% of required rate" | goal_15_trend == "Decreasing" ~ "Progressing Poorly"))
+
+# the above selects the goal 3, 9, 14, 15 scores/statuses/trends and mutates a progress variable for each to simplify trend observations into binary good progress or bad progress
+
+q3_filtered <- q3_sdg %>% 
+  filter(country_label == 'China' | country_label == 'Japan' | country_label == 'Hong Kong' | country_label == 'North Korea' | country_label == 'South Korea' | country_label == 'Macau' | country_label == 'Mongolia' | country_label == 'Taiwan') 
+
+q3_training <- anti_join(q3_sdg, q3_filtered)
+```
+##Pre-Fitting Speculation
+Stating speculation by goal, I would expect goals 14 and 15 to inversely affect goal 9(i.e 14 and 15 doing well meaning 9 does poorly) because it seems logical for increases in industry and infrastructure to increase pollution and decrease space for life on land, which would have a negative effect on aquatic and terrestrial environments. 
+I cannot confidently claim I have a confident expectation similar to that of goals 14 and 15 because an increase in innovation, industry, and infrastructure would logically improve public health due to greater accessibility and health related technology, it is difficult to speculate on whether or not the same goal could result in benefit or detriment to well being due to stress from working for example.
+
+```{r}
+#fitting the tree
+q3_tree <- rpart(goal_9_progress ~ goal_3_progress + goal_14_progress + goal_15_progress, data = q3_training)
+
+#plotting the tree
+plot(as.party(q3_tree), gp=gpar(cex=1), type = "simple")
+```
+
+## Observations of Fitted Tree
+
+Predictors:
+To rapidly summarize the predictors apparent effectiveness, goal 3 seems to be a very strong predictor with a relatively low error rate, while goal 14 was unused by the algorithm and goal 15 appears to have some level of accuracy when predicting poor goal 9 progress though is rather inaccurate in predicting good progress.
+
+Goal 3's strength as a predictor is likely in large part due to an increase in general health following from an increase in goal 9 leading to advancements in health, while the resulting change in lifestyle likely has a comparatively small negative effect if there is a negative effect at all in most countries.
+
+Goal 14's absence as a predictor is somewhat unexpected but is likely an indication that goal 14, at most, has less effect than goal 15 on goal 9. Though this is purely speculation, it is possible that this is a result of one or all of the comparatively much smaller use of aquatic area than terrestrial by most countries, the sheer size of some bodies of water helping withstand changes due to industry, and what metrics were used to determine the state of life below water.
+
+Goal 15's strength of prediction is both lacking compared to goal 3's, and is also inverted(i.e goal 15 doing well predicts goal 9 does poorly), which seems logical. The greater accuracy in predicting poor goal 9 progress makes sense when taking into account that it is easier for a country with less industry and infrastructure to do less damage to the land within its territory, with most of the error likely occurring from countries that have focused on maintaining their local ecosystems either alongside or after their industrial/innovative/infrastructure growth, as well as countries that have a greater territory and as a result have more wild, unused land. The relative inaccuracy of predicting good goal 9 progress from poor goal 15 I believe stems largely from varying levels of protection or management of life on land, implying that a decrease in environmental quality alone is not a hallmark of a growing industry.
+
+## Plots of goals 3, 14, and 15 relative to 9 in the general data set to see if there appears to be any correlation or lack thereof
+
+```{r}
+#goal 3 plot
+q3_sdg %>% ggplot(mapping=aes(x=goal_9_score, y=goal_3_score)) + geom_point() + labs(x = "Goal 9 score", y = "Goal 3 score", title = "Goal 3 relative to Goal 9")
+
+#goal 14 plot
+q3_sdg %>% ggplot(mapping=aes(x=goal_9_score, y=goal_14_score)) + geom_point() + labs(x = "Goal 9 score", y = "Goal 14 score", title = "Goal 14 relative to Goal 9")
+
+#goal 15 plot
+q3_sdg %>% ggplot(mapping=aes(x=goal_9_score, y=goal_15_score)) + geom_point() + labs(x = "Goal 9 score", y = "Goal 15 score", title = "Goal 15 relative to Goal 9")
+
+```
+
+## Observations of general data set visualisations
+
+Goal 3 and goal 15 both share 27 removed NA values whereas goal 14 is missing 68, possibly a result of landlocked countries reporting insufficient data and also possibly a factor in the fitting algorithm's lack of use of goal 14. In addition, goal 3 and goal 9 appear to have a rather clear visible(and positive) correlation while goal 14 has none to speak of and goal 15 has very little visible correlation that could potentially be positive but it is too weak to make a definitive claim.
+
+## Predicting the filtered country list with the fitted tree
+
+```{r}
+q3_predictions <- predict(q3_tree, newdata = q3_filtered, type = "class")
+
+q3_conf_matrix <- table(q3_predictions, q3_filtered$goal_9_progress)
+q3_conf_matrix
+#note for the matrix: vertical axis is predictions, horizontal is actual
+```
+
+## Observation of Prediction Accuracy
+
+As a preface, due to the data set used in this prediction being exceedingly small, it is difficult to claim significance for conclusions made about it.
+Keeping this in mind, with what little data there is, the tree might be inclined towards false positives as every country was predicted to be progressing well in goal 9 despite one of them progressing poorly. This is likely a result of the highest error rate in the initial fitting belonging to a progressing well result. The singular case of inaccuracy aside, though the data is too small to produce a meaningful conclusion on accuracy, this prediction has an 80% accuracy, 100% sensitivity, and 0% specificity.
+
+## Plot of goal 3 and 15 progress statuses in listed countries, to display predictor values
+
+```{r}
+# Mutate a new variable to be 1 for progressing well and 0 for poorly
+q3_plot_mutation <- q3_filtered %>% mutate(progress_3_bool = case_when(goal_3_progress == "progressing well" ~ 1, goal_3_progress == "progressing poorly" ~ 0), progress_15_bool = case_when(goal_15_progress == "progressing well" ~ 1, goal_15_progress == "progressing poorly" ~ 0))
+
+# goal 3 plot
+q3_plot_mutation %>% ggplot(aes(x = country_label, fill = goal_3_progress)) + geom_bar()
+
+# goal 15 plot
+q3_plot_mutation %>% ggplot(aes(x = country_label, fill = goal_15_progress)) + geom_bar()
+
+# predictions and actual values
+q3_predictions
+q3_filtered$goal_9_progress
+
+```
+
+## Observation on progress statuses
+
+Based off of these charts and the actual and predicted states of goal 9 progress, as well as South Korea's prediction being the false positive seems to indicate that the goal 3 indicator being positive alone leading to a prediction of positive goal 9 progress is not concise enough, or South Korea in particular is an outlier to this trend, or both are the case.
+
+
+## Conclusion
+
+On a global level, of the three predictors chosen, goal 3 was strongest though prone to causing false positives and goal 15 would often return false positives, while goal 14 had no consistent effect. On a level of our selected East Asian countries, goal 15 had no effect as every country in the selected set had poor goal 15 progress. As a result using goals 3, 14, and 15 do not appear to be a good set of predictors for goal 9 in East Asian countries. In order to refine the tree for this small subset, there are likely better alternatives to goal 14 and 15 for predicting goal 9 in addition to goal 3, while on a global level a better alternative to goal 14 could likely be found. Overall, goals 3 and 9 have a positive effect on each other, while goals 15 and 9 have slight negative effects on each other some of the time.
+
+```{r}
+# q4 (Leo)
+library(knitr)
+east_asia <- sdg %>% filter(country_label == "China" | 
+                              country_label == "South Korea" |
+                              country_label == "Japan" |
+                              country_label == "Mongolia")
+# names(east_asia)[2:(2*17 + 1)] <- 
+#   paste(c(rep(paste("goal_", 1:17, sep=""), each=2)), 
+#         rep(c("_status", "_trend"), times=17), sep="")
+# names(east_asia)[(2*17 + 2):(3*17 + 1)] <- 
+#   paste("goal_", 1:17, "_score", sep="")
+# east_asia
+```
+```{r}
+g7 <- ggplot(east_asia, aes(x = goal_11_score, y = goal_7_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 7 Score", x = "Goal 11 Score")
+g13 <- ggplot(east_asia, aes(x = goal_11_score, y = goal_13_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 13 Score", x = "Goal 11 Score")
+g14 <- ggplot(east_asia, aes(x = goal_11_score, y = goal_14_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 14 Score", x = "Goal 11 Score")
+g15 <- ggplot(east_asia, aes(x = goal_11_score, y = goal_15_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 15 Score", x = "Goal 11 Score")
+g7
+g13
+g14
+g15
+```
+There is one missing data for goal 14 (life below water) also from Mongolia since there is no ocean near Mongolia. From the scatter plots, there is a outlier for goal 13 from Mongolia. 
+```{r}
+no_mongolia <- east_asia %>% filter(country_label != "Mongolia")
+g13 <- ggplot(no_mongolia, aes(x = goal_11_score, y = goal_13_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 13 Score", x = "Goal 11 Score")
+g14 <- ggplot(no_mongolia, aes(x = goal_11_score, y = goal_14_score)) +
+  geom_point() +
+  ylim(0, 100) +
+  labs(y = "Goal 14 Score", x = "Goal 11 Score")
+g13
+```
+
+```{r}
+g7 + geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Goal 11 vs. Goal 7")
+g13 + geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Goal 11 vs. Goal 13")
+g14 + geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Goal 11 vs. Goal 14")
+g15 + geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Goal 11 vs. Goal 15")
+model_g7 <- lm(goal_7_score ~ goal_11_score, east_asia)
+model_g13 <- lm(goal_13_score ~ goal_11_score, no_mongolia)
+model_g14 <- lm(goal_14_score ~ goal_11_score, no_mongolia)
+model_g15 <- lm(goal_15_score ~ goal_11_score, east_asia)
+```
+Both G13 and G14 seems to be well explained by their prediction equation. G7 is also quite well explained by its prediction equation. G15 is not as well explained by its prediction equation with lots of points quite far away from the best-fit line. 
+```{r}
+ggplot(model_g7, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Goal 7 Residuals", x = "Goal 11", y = "Residual")
+ggplot(model_g13, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Goal 13 Residuals", x = "Goal 11", y = "Residual")
+ggplot(model_g14, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Goal 14 Residuals", x = "Goal 11", y = "Residual")
+ggplot(model_g15, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Goal 15 Residuals", x = "Goal 11", y = "Residual")
+```
+
+```{r}
+summary(model_g7)$coefficients
+summary(model_g7)$r.squared
+summary(model_g13)$coefficients
+summary(model_g13)$r.squared
+summary(model_g14)$coefficients
+summary(model_g14)$r.squared
+summary(model_g15)$coefficients
+summary(model_g15)$r.squared
+```
+From the R^2 value, both variability of G7 and G13 scores can be explained well by the model. G14 is not well explained by the model since there is no correlation between G14 and G11 from what the slope of the trend line indicates. G15 is explained moderately well by the model likely due to the relatively high residuals compared to the other goals. 
